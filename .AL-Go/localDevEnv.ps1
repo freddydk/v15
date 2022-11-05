@@ -1,4 +1,4 @@
-#
+﻿#
 # Script for creating local development environment
 # Please do not modify this script as it will be auto-updated from the AL-Go Template
 # Recommended approach is to use as is or add a script (freddyk-devenv.ps1), which calls this script with the user specific parameters
@@ -17,12 +17,6 @@ Set-StrictMode -Version 2.0
 
 $pshost = Get-Host
 if ($pshost.Name -eq "Visual Studio Code Host") {
-    $executionPolicy = Get-ExecutionPolicy -Scope CurrentUser
-    Write-Host "Execution Policy is $executionPolicy"
-    if ($executionPolicy -eq "Restricted") {
-        Write-Host "Changing Execution Policy to RemoteSigned"
-        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-    }
     if ($MyInvocation.InvocationName -eq '.' -or $MyInvocation.Line -eq '') {
         $scriptName = Join-Path $PSScriptRoot $MyInvocation.MyCommand
     }
@@ -45,17 +39,12 @@ if ($pshost.Name -eq "Visual Studio Code Host") {
 }
 
 try {
+$ALGoHelperPath = "$([System.IO.Path]::GetTempFileName()).ps1"
 $webClient = New-Object System.Net.WebClient
 $webClient.CachePolicy = New-Object System.Net.Cache.RequestCachePolicy -argumentList ([System.Net.Cache.RequestCacheLevel]::NoCacheNoStore)
 $webClient.Encoding = [System.Text.Encoding]::UTF8
-Write-Host "Downloading GitHub Helper module"
-$GitHubHelperPath = "$([System.IO.Path]::GetTempFileName()).psm1"
-$webClient.DownloadFile('https://raw.githubusercontent.com/microsoft/AL-Go-Actions/v2.1/Github-Helper.psm1', $GitHubHelperPath)
 Write-Host "Downloading AL-Go Helper script"
-$ALGoHelperPath = "$([System.IO.Path]::GetTempFileName()).ps1"
-$webClient.DownloadFile('https://raw.githubusercontent.com/microsoft/AL-Go-Actions/v2.1/AL-Go-Helper.ps1', $ALGoHelperPath)
-
-Import-Module $GitHubHelperPath
+$webClient.DownloadFile('https://raw.githubusercontent.com/microsoft/AL-Go-Actions/v1.5/AL-Go-Helper.ps1', $ALGoHelperPath)
 . $ALGoHelperPath -local
 
 $baseFolder = Join-Path $PSScriptRoot ".." -Resolve
@@ -85,13 +74,14 @@ The script will also modify launch.json to have a Local Sandbox configuration po
 $settings = ReadSettings -baseFolder $baseFolder -userName $env:USERNAME
 
 Write-Host "Checking System Requirements"
-$dockerProcess = (Get-Process "dockerd" -ErrorAction Ignore)
-if (!($dockerProcess)) {
-    Write-Host -ForegroundColor Red "Dockerd process not found. Docker might not be started, not installed or not running Windows Containers."
+$dockerService = Get-Service docker -ErrorAction SilentlyContinue
+if (-not $dockerService -or $dockerService.Status -ne "Running") {
+    throw "Creating a local development enviroment requires you to have Docker installed and running."
 }
+
 if ($settings.keyVaultName) {
     if (-not (Get-Module -ListAvailable -Name 'Az.KeyVault')) {
-        Write-Host -ForegroundColor Red "A keyvault name is defined in Settings, you need to have the Az.KeyVault PowerShell module installed (use Install-Module az) or you can set the keyVaultName to an empty string in the user settings file ($($ENV:UserName).Settings.json)."
+        throw "A keyvault name is defined in Settings, you need to have the Az.KeyVault PowerShell module installed (use Install-Module az) or you can set the keyVaultName to an empty string in the user settings file ($($ENV:UserName).Settings.json)."
     }
 }
 
@@ -156,9 +146,6 @@ CreateDevEnv `
     -credential $credential `
     -LicenseFileUrl $licenseFileUrl `
     -InsiderSasToken $insiderSasToken
-}
-catch {
-    Write-Host -ForegroundColor Red "Error: $($_.Exception.Message)`nStacktrace: $($_.scriptStackTrace)"
 }
 finally {
     if ($fromVSCode) {
